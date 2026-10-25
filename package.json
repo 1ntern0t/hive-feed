@@ -1,0 +1,23 @@
+{
+  "name": "hive-feed",
+  "version": "0.1.0",
+  "description": "Signed, pull-only, hash-chained event feed for bots. Zero dependencies, Ed25519 via node:crypto.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "hive-feed": "bin/hive-feed.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "demo": "node scripts/make-demo.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "author": "1ntern0t",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/1ntern0t/hive-feed.git"
+  }
+}

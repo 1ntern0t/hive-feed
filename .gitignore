@@ -1,0 +1,8 @@
+# Never commit key material.
+*.key
+*.pem
+*.p8
+keys/
+secrets/
+node_modules/
+*.state.json

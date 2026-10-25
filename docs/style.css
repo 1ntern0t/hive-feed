@@ -1,0 +1,17 @@
+body { font: 15px/1.5 system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1d2330; }
+main { max-width: 960px; margin: 0 auto; padding: 24px; }
+h1 { margin-top: 0; }
+label { display: block; margin-top: 14px; font-weight: 600; }
+textarea, input { width: 100%; box-sizing: border-box; font: 13px/1.4 ui-monospace, monospace; padding: 6px; }
+.buttons { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+button { padding: 8px 14px; font-size: 14px; cursor: pointer; }
+.warn { background: #fff4d6; border-left: 4px solid #e0a800; padding: 8px 12px; }
+#status { margin-top: 18px; padding: 10px 12px; font-weight: 600; white-space: pre-wrap; }
+#status.ok { background: #e3f6e8; border-left: 4px solid #1f9d55; }
+#status.bad { background: #fde8e8; border-left: 4px solid #d64545; }
+table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+th, td { border: 1px solid #d5d9e0; padding: 4px 6px; vertical-align: top; text-align: left; }
+td.text { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace; max-width: 380px; }
+td.untrusted { color: #a33; }
+ul.warnings { color: #8a5a00; }
+footer { margin-top: 32px; font-size: 13px; color: #555; }

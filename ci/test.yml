@@ -1,0 +1,35 @@
+# GitHub Actions workflow. Lives in ci/ because the token used to create this
+# repository lacked the `workflow` scope. To enable it, a maintainer copies it
+# to .github/workflows/test.yml.
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --test test/*.test.js
+      - name: refuse committed private keys
+        run: |
+          if git ls-files | grep -Ei '\.(key|pem|p8)$'; then echo "key file committed"; exit 1; fi
+          if git grep -nE 'BEGIN ([A-Z]+ )?PRIVATE KEY' -- . ':!SECURITY.md' ':!README.md' ':!test/cli.test.js'; then echo "private key material committed"; exit 1; fi
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
