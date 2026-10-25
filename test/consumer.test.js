@@ -99,10 +99,13 @@ test('stale feed warns, or fails in strict mode', () => {
   assert.equal(code(() => applyFeed(emptyState(), feed, { ...POLICY, now: later, strictFreshness: true })), 'HIVE_STALE');
 });
 
-test('key change and feed id change require deliberate re-pin', () => {
+test('anchor change and feed id change require deliberate re-pin', () => {
   const other = testKey();
   const r = applyFeed(emptyState(), buildFeed(key, 1), POLICY);
-  assert.equal(code(() => applyFeed(r.state, buildFeed(other, 2), POLICY)), 'HIVE_KEY_CHANGED');
+  assert.equal(code(() => applyFeed(r.state, buildFeed(other, 2), POLICY)), 'HIVE_ANCHOR_CHANGED');
+  // v0.1-style state (no anchor saved) still refuses a silent key swap.
+  const legacy = { ...r.state, anchor: null };
+  assert.equal(code(() => applyFeed(legacy, buildFeed(other, 2), POLICY)), 'HIVE_KEY_CHANGED');
   assert.equal(code(() => applyFeed(r.state, buildFeed(key, 2, { feedId: 'other' }), POLICY)), 'HIVE_WRONG_FEED');
 });
 

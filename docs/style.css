@@ -9,6 +9,10 @@ button { padding: 8px 14px; font-size: 14px; cursor: pointer; }
 #status { margin-top: 18px; padding: 10px 12px; font-weight: 600; white-space: pre-wrap; }
 #status.ok { background: #e3f6e8; border-left: 4px solid #1f9d55; }
 #status.bad { background: #fde8e8; border-left: 4px solid #d64545; }
+#status.warnstatus { background: #fff4d6; border-left: 4px solid #e0a800; }
+label.inline { font-weight: 400; }
+label.inline input { width: auto; }
+p.fingerprint { font-family: ui-monospace, monospace; font-weight: 600; word-break: break-all; }
 table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
 th, td { border: 1px solid #d5d9e0; padding: 4px 6px; vertical-align: top; text-align: left; }
 td.text { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace; max-width: 380px; }

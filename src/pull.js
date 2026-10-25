@@ -1,4 +1,5 @@
-import { verifyFeed, DEFAULT_LIMITS } from './feed.js';
+import { verifyFeedDetailed, DEFAULT_LIMITS } from './feed.js';
+import { checkPin } from './anchor.js';
 import { applyFeed, emptyState } from './consumer.js';
 
 export const DEFAULT_PULL = Object.freeze({
@@ -49,9 +50,15 @@ async function get(url, { timeoutMs, maxBytes, headers = {}, allowHttp, fetchImp
 }
 
 // Pull a feed: conditional GET (ETag), fetch detached signature, verify
-// against the pinned key, apply consumer policy. Returns
-// { changed, accepted, skipped, warnings, state }. On any error the caller
-// should keep its old state (fail closed).
+// against the pinned anchor, apply consumer policy. Returns
+// { changed, accepted, skipped, warnings, keyChanges, state }. On any error the
+// caller should keep its old state (fail closed).
+//
+// Pin: opts.pin (anchor fingerprint, or base64 genesis key; opts.publicKey is
+// accepted as an alias). If none is given, the anchor saved in state from an
+// earlier pull is used. With no pin at all the pull is refused (HIVE_UNPINNED)
+// unless opts.allowUnpinned is set, in which case a loud warning is returned
+// and the anchor is saved (trust on first use).
 export async function pull(opts) {
   const o = { ...DEFAULT_PULL, ...opts };
   const fetchImpl = o.fetchImpl || globalThis.fetch;
@@ -66,8 +73,11 @@ export async function pull(opts) {
 
   const sigRes = await get(sigUrl.href, { ...o, fetchImpl, maxBytes: o.maxSigBytes });
   const sig = sigRes.body.toString('utf8').trim();
-  const feed = verifyFeed(feedRes.body, sig, o.publicKey, { maxBytes: o.maxBytes, maxEvents: o.maxEvents });
-  const result = applyFeed(state, feed, o.policy || {});
+  const pin = o.pin || o.publicKey || state.anchor || null;
+  const v = verifyFeedDetailed(feedRes.body, sig, pin, { maxBytes: o.maxBytes, maxEvents: o.maxEvents, allowUnpinned: !!o.allowUnpinned });
+  if (state.anchor && pin !== state.anchor) checkPin(state.anchor, v.feed.genesis); // explicit pin must agree with saved anchor
+  const result = applyFeed(state, v.feed, o.policy || {});
   result.state.etag = feedRes.etag || null;
-  return { changed: true, ...result };
+  result.warnings = [...v.warnings, ...result.warnings];
+  return { changed: true, fingerprint: v.fingerprint, fingerprintDisplay: v.fingerprintDisplay, ...result };
 }

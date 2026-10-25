@@ -1,6 +1,7 @@
 // Consumer-side policy: given a feed that already passed verifyFeed(), decide
 // which events are new and trustworthy relative to locally persisted state.
 // Event text is untrusted DATA. Nothing here interprets or executes it.
+import { anchorFingerprint } from './anchor.js';
 
 export const DEFAULT_POLICY = Object.freeze({
   maxAgeSec: 24 * 3600,
@@ -11,7 +12,10 @@ export const DEFAULT_POLICY = Object.freeze({
 });
 
 export function emptyState() {
-  return { feed_id: null, key_id: null, seq: 0, hash: '0'.repeat(64), seen_ids: [], etag: null };
+  return {
+    feed_id: null, anchor: null, key_id: null, key_log_len: 0, key_log_head: null,
+    seq: 0, hash: '0'.repeat(64), seen_ids: [], etag: null
+  };
 }
 
 function fail(msg, code) {
@@ -28,7 +32,14 @@ export function applyFeed(state, feed, opts = {}) {
   const warnings = [];
 
   if (st.feed_id && st.feed_id !== feed.feed_id) fail('state is for feed ' + st.feed_id + ', got ' + feed.feed_id, 'HIVE_WRONG_FEED');
-  if (st.key_id && st.key_id !== feed.key_id) fail('feed key changed; re-pin deliberately (see SPEC key rotation)', 'HIVE_KEY_CHANGED');
+  const anchor = anchorFingerprint(feed.genesis);
+  if (st.anchor && st.anchor !== anchor) fail('feed anchor (genesis) changed; this is a different feed. Re-pin deliberately.', 'HIVE_ANCHOR_CHANGED');
+  if (!st.anchor && st.key_id && st.key_id !== feed.key_id) fail('feed key changed and state has no anchor (v0.1 state); re-pin deliberately', 'HIVE_KEY_CHANGED');
+  // The key history is append-only: the rotations we already accepted must
+  // still be there, unchanged, as a prefix of key_log.
+  const kl = feed.key_log;
+  if (st.key_log_len > kl.length) fail('key history shrank: had ' + st.key_log_len + ' rotations, feed has ' + kl.length, 'HIVE_KEY_CHANGED');
+  if (st.key_log_len > 0 && kl[st.key_log_len - 1].hash !== st.key_log_head) fail('key history rewritten (rotation ' + st.key_log_len + ' differs from the one we accepted)', 'HIVE_KEY_CHANGED');
   if (feed.head.seq < st.seq) fail('rollback: feed head ' + feed.head.seq + ' < last seen ' + st.seq, 'HIVE_ROLLBACK');
   if (feed.head.seq === st.seq && feed.head.hash !== st.hash) fail('fork: same seq, different head hash', 'HIVE_FORK');
 
@@ -44,6 +55,11 @@ export function applyFeed(state, feed, opts = {}) {
     }
   } else if (first && first.seq > 1) {
     warnings.push('first pull starts mid-chain at seq ' + first.seq + '; earlier history not verified');
+  }
+
+  const keyChanges = kl.slice(st.key_log_len).map((r) => ({ seq: r.seq, mode: r.rotate.mode, from: r.rotate.prev_key_id, next_pubkey: r.rotate.next_pubkey }));
+  for (const k of keyChanges) {
+    warnings.push('publisher key ' + (k.mode === 'recovery' ? 'FORCE-ROTATED by recovery key' : 'rotated') + ' at seq ' + k.seq + ' (from ' + k.from + ')');
   }
 
   const feedAge = (now - Date.parse(feed.updated)) / 1000;
@@ -73,10 +89,13 @@ export function applyFeed(state, feed, opts = {}) {
   const newState = {
     ...st,
     feed_id: feed.feed_id,
+    anchor,
     key_id: feed.key_id,
+    key_log_len: kl.length,
+    key_log_head: kl.length ? kl[kl.length - 1].hash : null,
     seq: feed.head.seq,
     hash: feed.head.hash,
     seen_ids: seenIds
   };
-  return { accepted, skipped, warnings, state: newState };
+  return { accepted, skipped, warnings, keyChanges, state: newState };
 }

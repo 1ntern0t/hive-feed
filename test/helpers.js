@@ -1,6 +1,9 @@
 // Test helpers. The key pair here is a THROWAWAY TEST KEY generated fresh at
 // test time and kept in memory only. It is never written to the repo.
-import { generateKeyPair, importPrivateKey, emptyFeed, appendEvent, serializeFeed, signFeedBytes } from '../src/index.js';
+import {
+  generateKeyPair, importPrivateKey, emptyFeed, appendEvent, serializeFeed, signFeedBytes, textDigest, eventHash,
+  eventSigningBytes, eventCosigningBytes, signBytes, keyId
+} from '../src/index.js';
 
 export const NOW = new Date('2026-10-25T12:00:00.000Z');
 
@@ -10,7 +13,7 @@ export function testKey() {
 }
 
 export function buildFeed(key, n = 3, opts = {}) {
-  let feed = emptyFeed(opts.feedId || 'test-feed', key.publicKey, NOW);
+  let feed = emptyFeed(opts.feedId || 'test-feed', key.publicKey, NOW, { recoveryPubkey: opts.recoveryPubkey });
   for (let i = 1; i <= n; i++) {
     const ts = new Date(NOW.getTime() - (n - i + 1) * 60000).toISOString();
     feed = appendEvent(feed, key.priv, {
@@ -36,4 +39,22 @@ export function signed(key, feed) {
 export function resignRaw(key, str) {
   const bytes = Buffer.from(str, 'utf8');
   return { bytes, sig: signFeedBytes(key.priv, bytes) };
+}
+
+// Append an event signed by ANY key, bypassing appendEvent's key policy, to
+// simulate a thief or a buggy publisher. Test-only.
+export function forgeEvent(feed, signerPriv, fields = {}, cosignerPriv = null) {
+  const ev = {
+    type: 'task', id: 'forged-' + (feed.head.seq + 1), ts: NOW.toISOString(), channel: 'c', poster_id: 'U-GIGATRON', url: '',
+    text_digest: textDigest('forged'), seq: feed.head.seq + 1, prev_hash: feed.head.hash, ...fields
+  };
+  ev.hash = eventHash(ev);
+  ev.sig = signBytes(signerPriv, eventSigningBytes(ev));
+  if (cosignerPriv) ev.cosig = signBytes(cosignerPriv, eventCosigningBytes(ev));
+  const out = { ...feed, head: { seq: ev.seq, hash: ev.hash }, events: [...feed.events, ev] };
+  if (ev.type === 'rotate') {
+    out.key_log = [...feed.key_log, ev];
+    out.key_id = keyId(ev.rotate.next_pubkey);
+  }
+  return out;
 }

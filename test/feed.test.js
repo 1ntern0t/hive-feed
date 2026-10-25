@@ -66,7 +66,7 @@ test('feed signed by the right key but pinned to a different key is rejected', (
   const other = testKey();
   const feed = buildFeed(other, 1);
   const { bytes, sig } = signed(other, feed);
-  assert.equal(codeOf(() => verifyFeed(bytes, sig, key.publicKey)), 'HIVE_BAD_SIGNATURE');
+  assert.equal(codeOf(() => verifyFeed(bytes, sig, key.publicKey)), 'HIVE_ANCHOR_MISMATCH');
 });
 
 test('tampering: any byte change breaks the detached signature', () => {
@@ -130,7 +130,9 @@ test('truncated chain: last event dropped but head kept -> head mismatch', () =>
 test('truncated file bytes are rejected', () => {
   const { bytes, sig } = signed(key, buildFeed(key, 3));
   const cut = bytes.subarray(0, bytes.length - 40);
-  assert.equal(codeOf(() => verifyFeed(cut, sig, key.publicKey)), 'HIVE_BAD_SIGNATURE');
+  // v0.2 parses (size-limited, canonical) before the signature check, because
+  // the signing key comes from the pinned genesis + key history in the file.
+  assert.equal(codeOf(() => verifyFeed(cut, sig, key.publicKey)), 'HIVE_INVALID_FEED');
   // Even if re-signed, the cut JSON does not parse.
   const re = signFeedBytes(key.priv, cut);
   assert.equal(codeOf(() => verifyFeed(cut, re, key.publicKey)), 'HIVE_INVALID_FEED');

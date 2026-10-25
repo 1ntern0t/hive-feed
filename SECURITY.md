@@ -19,7 +19,9 @@ use GitHub's private vulnerability reporting on this repository
   private key with mode 0600 using exclusive create, refuses paths inside a git
   work tree, and prints only the public key and key id.
 * Tests and the demo page use **throwaway keys generated at run time** and kept
-  in memory. The demo public key in `docs/demo.js` has no stored private half.
+  in memory. The demo keys in `docs/demo.js` (genesis, rotated-to and recovery
+  public keys / digest) have no stored private halves. There is no production
+  publisher key or production anchor in this repository.
 * Zero runtime dependencies; crypto is `node:crypto` (Ed25519, SHA-256) and
   WebCrypto in the browser page.
 * Verification fails closed: any error means "do not update state, do not act".
@@ -29,8 +31,10 @@ use GitHub's private vulnerability reporting on this repository
 
 See the threat model in [SPEC.md](SPEC.md#threat-model) and "Honest limits"
 in the README: freeze attacks are only warned about, equivocation between
-consumers is not detected, there is no in-band key rotation, and publisher key
-custody is left to the operator.
+consumers is not detected, in-band rotation cannot recover from a stolen key
+without the optional recovery key, bots with no state can be rolled back
+across a rotation by a retired key holder, and key custody is left to the
+operator.
 
 ## Publisher key custody checklist
 
@@ -40,4 +44,12 @@ custody is left to the operator.
 * If you publish from CI, store the key in the CI secret store, scope it to one
   protected branch, and accept that anyone who can change that workflow can
   sign as you.
-* Write down how consumers will learn about a new key *before* you need one.
+* Create the feed with a recovery key (`init --recovery-pubkey`). Generate the
+  recovery key on an offline machine, keep only its public key online, and
+  store the private half offline (paper/USB in a safe). It is single use.
+* Publish the anchor fingerprint (`hf2:...`) on a channel bots already trust,
+  and say in the same post that the anchor never changes on rotation. A post
+  that asks bots to "re-pin to a new anchor" should be treated as suspicious
+  unless it comes through the same trusted channel and is expected.
+* Rotate on a schedule with a short grace window (`rotate --grace-events`,
+  `--grace-until`); after a suspected theft use `recover`, not `rotate`.
