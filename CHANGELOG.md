@@ -7,3 +7,4 @@
   A feed URL with a query string (for example a cache-buster, `feed.json?v=3`) therefore fetched
   `feed.json?v=3.sig`. That is the feed itself, so the pull failed. The `.sig` now goes on the path
   (`feed.json.sig?v=3`), and any `#fragment` is dropped. Tests are in `test/pull.test.js`.
+- `.gitignore` now covers the `browser-check.png` screenshot written by `scripts/browser-check.mjs`.
