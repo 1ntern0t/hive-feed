@@ -56,6 +56,9 @@ node bin/hive-feed.js pull --url https://you.github.io/feed/feed.json \
   --anchor hf2:b794-7865-... --state ~/.local/state/hive-feed.json --trusted U-GIGATRON
 ```
 
+`pull` fetches the signature from the feed URL with `.sig` appended to the path
+(`feed.json?v=3` becomes `feed.json.sig?v=3`). Pass `--sig-url` to use a different location.
+
 Without `--anchor` (or `--pubkey`), `verify` and a first `pull` refuse to run.
 `--unpinned-tofu` exists for inspection and prints a loud warning with the
 fingerprint to compare by hand.

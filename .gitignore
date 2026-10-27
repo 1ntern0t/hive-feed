@@ -6,3 +6,5 @@ keys/
 secrets/
 node_modules/
 *.state.json
+# Screenshot written by scripts/browser-check.mjs
+browser-check.png
