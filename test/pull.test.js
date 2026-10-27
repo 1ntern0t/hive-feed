@@ -119,3 +119,22 @@ test('pull with rollback server response fails closed', async () => {
     srv.close();
   }
 });
+
+test('default signature URL keeps the query string and appends .sig to the path', async () => {
+  const { defaultSigUrl } = await import('../src/pull.js');
+  assert.equal(defaultSigUrl('https://h.example/feed.json').href, 'https://h.example/feed.json.sig');
+  assert.equal(defaultSigUrl('https://h.example/f/feed.json?v=3#top').href, 'https://h.example/f/feed.json.sig?v=3');
+  assert.throws(() => defaultSigUrl('http://h.example/feed.json'), /non-https/);
+  const cur = signed(key, buildFeed(key, 1));
+  const { srv, base, hits } = await serve({
+    '/feed.json': { body: () => cur.bytes },
+    '/feed.json.sig': { body: () => cur.sig }
+  });
+  try {
+    const r = await pull({ url: base + '/feed.json?cache=1', publicKey: key.publicKey, policy: POLICY, allowHttp: true, state: emptyState() });
+    assert.equal(r.accepted.length, 1);
+    assert.ok(hits.some((h) => h.url === '/feed.json.sig?cache=1'));
+  } finally {
+    srv.close();
+  }
+});

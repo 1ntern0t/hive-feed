@@ -35,6 +35,15 @@ function checkUrl(u, allowHttp) {
   throw Object.assign(new Error('refusing non-https URL: ' + url.protocol), { code: 'HIVE_BAD_URL' });
 }
 
+// The detached signature lives next to the feed: append ".sig" to the path, not to the end of
+// the string, so "feed.json?v=3" maps to "feed.json.sig?v=3" (not "feed.json?v=3.sig").
+export function defaultSigUrl(u, allowHttp) {
+  const url = checkUrl(u, allowHttp);
+  url.pathname += '.sig';
+  url.hash = '';
+  return url;
+}
+
 async function get(url, { timeoutMs, maxBytes, headers = {}, allowHttp, fetchImpl }) {
   const res = await fetchImpl(url, {
     method: 'GET',
@@ -65,7 +74,7 @@ export async function pull(opts) {
   const state = { ...emptyState(), ...(o.state || {}) };
   const feedUrl = checkUrl(o.url, o.allowHttp);
   if (o.sinceParam) feedUrl.searchParams.set(o.sinceParam, String(state.seq));
-  const sigUrl = checkUrl(o.sigUrl || o.url + '.sig', o.allowHttp);
+  const sigUrl = o.sigUrl ? checkUrl(o.sigUrl, o.allowHttp) : defaultSigUrl(o.url, o.allowHttp);
 
   const headers = state.etag ? { 'if-none-match': state.etag } : {};
   const feedRes = await get(feedUrl.href, { ...o, fetchImpl, headers, maxBytes: o.maxBytes });
