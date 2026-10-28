@@ -4,7 +4,8 @@ import { resolve, dirname, join } from 'node:path';
 import {
   generateKeyPair, importPrivateKey, publicKeyFromPrivate, keyId, emptyFeed, appendEvent, rotateKey, recoverKey,
   serializeFeed, serializeFeedNdjson, signFeedBytes, verifyFeed, verifyFeedDetailed, applyFeed, emptyState, pull,
-  safeDisplay, anchorFingerprint, formatFingerprint
+  safeDisplay, anchorFingerprint, formatFingerprint, parseAllowlist, parseSlackInput, bridgeSlack, emptyBridgeState,
+  parseBridgeState, makeView, serializeView, parseView, comparePeers, VIEW_FORMAT
 } from '../src/index.js';
 
 const USAGE = `hive-feed: signed, pull-only event feed (hive-feed/2)
@@ -25,6 +26,19 @@ Publisher:
                     [--channel <c>] [--keep <n>] [--ndjson] [--anchor <fingerprint>]
   hive-feed fingerprint --feed <feed.json> [--sig <feed.json.sig>]
 
+Slack bridge (offline; you fetch Slack JSON yourself, no tokens, no network):
+  hive-feed bridge-slack --feed <feed.json> --key <publisher.key> --allowlist <file> --channel <C...>
+                    [--input <slack.json> | stdin] [--state <bridge-state.json>] [--permalink-base <https://x.slack.com>]
+                    [--dry-run] [--keep <n>] [--ndjson] [--anchor <fingerprint>]
+                    (trust = Slack user ID on the allowlist; display names are ignored)
+
+Peer history comparison:
+  hive-feed view    --feed <feed.json> [--sig <f>] --anchor <hf2:...> [--observer <label>] [--sign-key <bot.key>]
+                    [--out <view.json>]
+  hive-feed compare --anchor <hf2:...> --mine <view.json|feed.json> --peer <view.json|feed.json> [--peer ...]
+                    (feed files are verified, sig at <file>.sig; exit 0 consistent/prefix, 3 fork,
+                     4 different genesis, 5 undetermined)
+
 Consumer (exactly one trust source is required):
   --anchor <hf2:...>        anchor fingerprint published out of band by the operator (recommended)
   --pubkey <b64> | --pubkey-file <f>   genesis public key (v0.1 style, weaker: no recovery commitment)
@@ -35,12 +49,14 @@ Consumer (exactly one trust source is required):
   hive-feed pull    --url <https://.../feed.json> [--sig-url <url>] [<trust source>]
                     --state <state.json> (--trusted <ids> | --trusted-file <f>)
                     [--max-bytes <n>] [--timeout-ms <n>] [--max-age <sec>] [--since-param <name>] [--allow-http]
+                    [--save-feed <feed.json>]   (keeps the verified file + .sig, e.g. for 'view')
                     (pull reuses the anchor saved in --state when no trust source is given)
 
 Event text is untrusted data. This tool never executes it; consumers must not either.
 `;
 
-const BOOL_FLAGS = new Set(['no-text', 'ndjson', 'allow-http', 'help', 'unpinned-tofu']);
+const BOOL_FLAGS = new Set(['no-text', 'ndjson', 'allow-http', 'help', 'unpinned-tofu', 'dry-run']);
+const MULTI_FLAGS = new Set(['peer']);
 const UNPINNED_BANNER = '!!! WARNING: UNPINNED (--unpinned-tofu). The publisher anchor was NOT checked against an\n' +
   '!!! out-of-band value. Anyone who can serve this URL could have produced this feed. Compare the\n' +
   '!!! fingerprint below with the operator\'s announcement before trusting it.\n';
@@ -54,7 +70,8 @@ function parseArgs(argv) {
       if (BOOL_FLAGS.has(k)) out[k] = true;
       else {
         if (i + 1 >= argv.length) usageError('missing value for --' + k);
-        out[k] = argv[++i];
+        if (MULTI_FLAGS.has(k)) (out[k] = out[k] || []).push(argv[++i]);
+        else out[k] = argv[++i];
       }
     } else out._.push(a);
   }
@@ -286,8 +303,86 @@ async function cmdPull(args) {
   }
   process.stderr.write('anchor ' + res.fingerprintDisplay + ' key_id ' + res.state.key_id + '\n');
   printResult(res);
+  if (args['save-feed']) {
+    const out = resolve(args['save-feed']);
+    atomicWrite(out, res.bytes);
+    atomicWrite(out + '.sig', res.sig + '\n');
+  }
   atomicWrite(statePath, JSON.stringify(res.state, null, 2) + '\n', 0o600);
   process.stderr.write('state saved: seq ' + res.state.seq + '\n');
+}
+
+function cmdBridgeSlack(args) {
+  const feedPath = resolve(need(args, 'feed'));
+  if (!existsSync(feedPath)) usageError('feed does not exist: ' + feedPath + ' (create it with init first)');
+  const keyPath = resolve(need(args, 'key'));
+  const root = findGitRoot(dirname(keyPath));
+  if (root) usageError('refusing to use a private key inside a git work tree (' + root + '). Keep the publisher key outside any repo.');
+  const allowlist = parseAllowlist(readFileSync(need(args, 'allowlist'), 'utf8'));
+  if (allowlist.length === 0) usageError('allowlist is empty: nobody would be trusted');
+  const channel = need(args, 'channel');
+  const slack = parseSlackInput(readFileSync(args.input && args.input !== '-' ? args.input : 0));
+  const statePath = args.state ? resolve(args.state) : null;
+  const state = statePath && existsSync(statePath) ? parseBridgeState(readFileSync(statePath, 'utf8')) : emptyBridgeState();
+  const priv = loadPrivate(keyPath);
+  const feed = loadOwnFeed(feedPath, args);
+  if (keyId(publicKeyFromPrivate(priv)) !== feed.key_id) usageError('--key is not the current publisher key ' + feed.key_id);
+  const res = bridgeSlack(feed, priv, slack, {
+    channel, allowlist, state, permalinkBase: args['permalink-base'], keep: args.keep ? Number(args.keep) : 0
+  });
+  if (!args['dry-run'] && res.appended.length) writeFeed(feedPath, res.feed, priv, args);
+  if (!args['dry-run'] && statePath) atomicWrite(statePath, JSON.stringify(res.state, null, 2) + '\n', 0o600);
+  process.stdout.write(safeJson({ dry_run: !!args['dry-run'], appended: res.appended, skipped: res.skipped }) + '\n');
+  process.stderr.write((args['dry-run'] ? 'dry run: would append ' : 'appended ') + res.appended.length + ', skipped ' + res.skipped.length +
+    (res.appended.length && !args['dry-run'] ? ', head seq ' + res.feed.head.seq : '') + '\n');
+}
+
+// A file is either a view summary or a feed (with <file>.sig next to it).
+function loadViewOrFeed(path, pin, args) {
+  const bytes = readFileSync(path);
+  let probe = null;
+  try {
+    probe = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    probe = null; // NDJSON feed
+  }
+  if (probe && probe.format === VIEW_FORMAT) {
+    const { view, signed } = parseView(bytes);
+    return { view, evidence: 'view-summary', signed };
+  }
+  const v = verifyFeedDetailed(bytes, readFileSync(path + '.sig', 'utf8'), pin, { allowUnpinned: pin === null });
+  return { view: makeView(v.feed, { observer: args.observer }), evidence: 'signed-feed', signed: true };
+}
+
+function cmdView(args) {
+  const feedPath = need(args, 'feed');
+  const anchor = need(args, 'anchor');
+  const v = verifyFeedDetailed(readFileSync(feedPath), readFileSync(args.sig || feedPath + '.sig', 'utf8'), anchor);
+  const signingKey = args['sign-key'] ? loadPrivate(args['sign-key']) : undefined;
+  const view = makeView(v.feed, { observer: args.observer || '', signingKey });
+  const out = serializeView(view);
+  if (args.out) atomicWrite(resolve(args.out), out);
+  else process.stdout.write(out);
+  process.stderr.write('view feed ' + view.feed_id + ' anchor ' + v.fingerprintDisplay + ' head seq ' + view.head.seq + ' window ' +
+    view.window.from_seq + '..' + view.head.seq + (signingKey ? ' (signed by observer key)' : ' (unsigned, digest only)') + '\n');
+}
+
+function cmdCompare(args) {
+  const anchor = need(args, 'anchor');
+  const peersArg = args.peer || usageError('--peer is required (repeat it for several peers)');
+  const mine = loadViewOrFeed(need(args, 'mine'), anchor, args);
+  const peers = peersArg.map((p) => ({ name: p, ...loadViewOrFeed(p, null, args) }));
+  const res = comparePeers(mine.view, peers, { pin: anchor, mineEvidence: mine.evidence });
+  for (const r of res.results) {
+    process.stdout.write(safeJson({
+      peer: r.peer, evidence: r.evidence, verdict: r.verdict, behind: r.behind === 'a' ? 'mine' : r.behind === 'b' ? 'peer' : null,
+      divergence_seq: r.divergence_seq, divergence_exact: r.divergence_exact, proven_by_signatures: r.proven, detail: r.detail
+    }) + '\n');
+  }
+  process.stderr.write('overall ' + res.overall + '\n');
+  if (res.overall === 'fork') process.stderr.write('FORK: the feed showed different histories. ' +
+    (res.results.some((r) => r.proven) ? 'Both sides are publisher-signed feeds: this is evidence of equivocation or key theft.' : 'At least one side is a peer claim (view summary), not proof.') + '\n');
+  process.exitCode = { consistent: 0, fork: 3, different_genesis: 4, undetermined: 5 }[res.overall];
 }
 
 async function main() {
@@ -306,6 +401,9 @@ async function main() {
     case 'fingerprint': return cmdFingerprint(args);
     case 'verify': return cmdVerify(args);
     case 'pull': return cmdPull(args);
+    case 'bridge-slack': return cmdBridgeSlack(args);
+    case 'view': return cmdView(args);
+    case 'compare': return cmdCompare(args);
     default: return usageError('unknown command ' + safeDisplay(cmd));
   }
 }

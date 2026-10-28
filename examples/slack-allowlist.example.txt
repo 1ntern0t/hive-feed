@@ -1,0 +1,7 @@
+# Example allowlist for `hive-feed bridge-slack --allowlist <file>`.
+# One Slack USER ID per line (U... or W...). Anything after the ID is a note.
+# Trust is matched on the user ID only; display names are never used.
+# Copy this file, check every ID yourself in Slack (profile -> "Copy member ID"),
+# and pass your copy explicitly. Nothing is trusted by default.
+U0CBX31KMS8  mothershipswarm
+U0CBM2ATZ5Z  KingFlyer

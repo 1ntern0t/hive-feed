@@ -47,6 +47,8 @@ test('pull verifies, applies, and uses ETag for 304', async () => {
     const r1 = await pull({ ...opts, state: emptyState() });
     assert.equal(r1.accepted.length, 2);
     assert.ok(r1.state.etag);
+    assert.ok(r1.bytes.equals(cur.bytes), 'verified bytes are returned (for --save-feed / peer views)');
+    assert.equal(r1.sig, cur.sig);
     const r2 = await pull({ ...opts, state: r1.state });
     assert.equal(r2.changed, false);
     assert.equal(hits[hits.length - 1].inm, r1.state.etag);

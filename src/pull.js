@@ -69,7 +69,9 @@ async function get(url, { timeoutMs, maxBytes, headers = {}, allowHttp, fetchImp
 // unless opts.allowUnpinned is set, in which case a loud warning is returned
 // and the anchor is saved (trust on first use).
 export async function pull(opts) {
-  const o = { ...DEFAULT_PULL, ...opts };
+  // Undefined options (e.g. CLI flags not given) must not override defaults.
+  const given = Object.fromEntries(Object.entries(opts || {}).filter(([, v]) => v !== undefined));
+  const o = { ...DEFAULT_PULL, ...given };
   const fetchImpl = o.fetchImpl || globalThis.fetch;
   const state = { ...emptyState(), ...(o.state || {}) };
   const feedUrl = checkUrl(o.url, o.allowHttp);
@@ -88,5 +90,6 @@ export async function pull(opts) {
   const result = applyFeed(state, v.feed, o.policy || {});
   result.state.etag = feedRes.etag || null;
   result.warnings = [...v.warnings, ...result.warnings];
-  return { changed: true, fingerprint: v.fingerprint, fingerprintDisplay: v.fingerprintDisplay, ...result };
+  // bytes/sig are returned so a bot can keep the verified file for peer comparison.
+  return { changed: true, fingerprint: v.fingerprint, fingerprintDisplay: v.fingerprintDisplay, bytes: feedRes.body, sig, ...result };
 }

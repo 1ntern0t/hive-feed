@@ -1,6 +1,8 @@
 # hive-feed/2 specification
 
-Status: draft 0.2 (package v0.2.0), single implementation, not reviewed by anyone else.
+Status: draft 0.3 (package v0.3.0), feed format unchanged (`hive-feed/2`), single
+implementation, **cryptography not reviewed by anyone else** (see
+[docs/REVIEW.md](docs/REVIEW.md) for the review packet).
 hive-feed/2 replaces hive-feed/1 (v0.1.0); v0.1 verifiers reject /2 feeds and
 vice versa (format string and unknown-field checks), so a mix fails closed.
 
@@ -247,17 +249,87 @@ seq, hash, seen_ids, etag}` and, after a successful verification:
 | **Tampering** | Any byte change breaks the file signature; edited events fail `hash`/`sig`; text must match its digest. | None known beyond key compromise. |
 | **Replay** (old file or old event) | Rollback check on `head.seq`, `seq > state.seq` filter, seen-id set, max age, unique ids. | A consumer with no state (first pull) can be served an old but valid feed; the freshness check only warns. |
 | **Rollback / freeze** | Persistent `seq`/`hash`; `updated` staleness warning. | An attacker who controls the host can serve the last valid file forever (freeze). Detecting this needs an independent clock signal, e.g. a mandatory heartbeat event plus `strictFreshness`. |
-| **Fork / equivocation** (publisher shows different histories to different bots) | Per-consumer fork detection against stored head. | Two consumers are not compared with each other. Gossiping heads between bots would detect equivocation; not implemented. |
+| **Fork / equivocation** (publisher shows different histories to different bots) | Per-consumer fork detection against stored head. Since 0.3, bots can exchange view summaries or signed feed files and compare them (`compareViews`, `hive-feed compare`), which reports the earliest differing seq. | Nothing transports views between bots; operators must arrange the exchange. A view summary from a peer is a claim; only two signed feed files are proof. Bots that never compare are not protected. |
 | **Reordering / truncation** | Contiguous `seq`, `prev_hash` chain, `head` == last event, canonical bytes. Truncated files fail signature or parse. | Publisher pruning is indistinguishable from truncation of old history; consumers see a gap warning. |
 | **Injection in text** | Text is untrusted DATA. It is never executed, evaluated, templated into prompts as instructions, or rendered as HTML. The CLI emits it JSON-escaped (control and bidi characters escaped) inside `{"untrusted_data": true, ...}`; the web page uses `textContent` only under a CSP with no inline script and `connect-src 'none'`. | A downstream LLM agent that pastes event text into its prompt can still be prompt-injected. Consumers must treat event text like any message from a stranger: quote it, never obey it. Signatures do not make content safe. |
 | **Resource exhaustion** | Size, event-count, text-length, URL-length and timeout limits; streamed size check during fetch. | Limits are per-request; a consumer polling too often can still be rate-limited by the host. |
 | **First-pull impersonation** | Pin the anchor fingerprint (out of band); unpinned mode refused by default, loudly warned when chosen. | A bot that copies the "anchor" from an attacker-controlled page pins the attacker. The out-of-band channel is only as good as the operator's announcement account. |
 | **Key compromise (current key)** | Private key file 0600 outside any repo; CLI refuses keys inside a git tree. Pre-committed offline recovery key can force-rotate; normal rotations cannot touch it. | Until recovery is published, the thief can publish anything, including events bots act on. Recovery does not erase events the thief already published. Without a committed recovery key, only an out-of-band re-anchor helps. |
-| **Retired key reuse** | Old key rejected after its grace window (`HIVE_KEY_RETIRED`); old key cannot rotate. | A bot with **no state** can be served an older, validly signed history from before the rotation by someone holding the old key (rollback of the key history). Only state, a fresher out-of-band hint, or peer comparison catches this; none of the latter two are implemented. |
+| **Retired key reuse** | Old key rejected after its grace window (`HIVE_KEY_RETIRED`); old key cannot rotate. | A bot with **no state** can be served an older, validly signed history from before the rotation by someone holding the old key (rollback of the key history). Only state, a fresher out-of-band hint, or peer comparison catches this; no out-of-band freshness hint exists, and peer comparison (0.3) only helps if the bot actually compares with a peer that has newer history. |
 | **Recovery key compromise** | Kept offline, revealed only when used, single use. | Thief of the recovery key can take over the feed. Treat it like a root key. |
+
+## Peer view summaries (`hive-feed/view-1`, new in 0.3)
+
+A bot describes what it verified with a view summary (canonical JSON, all
+fields required, unknown fields rejected):
+
+```json
+{
+  "anchor": "<64 hex anchor fingerprint>",
+  "digest": "<hex sha256('hive-feed/view-1:' + canonical(view without digest, sig))>",
+  "feed_id": "gigatron-main",
+  "format": "hive-feed/view-1",
+  "head": { "hash": "<hex64>", "seq": 42 },
+  "key_log": [ "<hash of each rotate event, oldest first>" ],
+  "observed_at": "2026-10-28T15:00:00.000Z",
+  "observer": "<free-form label, untrusted, <= 128 chars, may be empty>",
+  "observer_pubkey": "" ,
+  "sig": "",
+  "window": { "from_seq": 1, "hashes": [ "<hash at from_seq>", "...", "<hash at head.seq>" ] }
+}
+```
+
+* `window.hashes` are the event hashes the bot verified, contiguous, ending
+  at `head`; empty window means `from_seq = head.seq + 1`. At most 5000.
+* `sig` (optional, with `observer_pubkey`) is an Ed25519 signature by the
+  observer's own key over `"hive-feed/view-1:sig:" + digest`. The digest
+  makes edits in transit detectable; the signature says which key produced
+  the view. Neither proves the view is true.
+* Comparison (`compareViews(a, b)`): different `anchor` gives
+  `different_genesis`. Otherwise the overlapping seq range is scanned: the
+  first seq whose hashes differ is the divergence (`fork`; exact if the seq
+  before it is equal in both or it is seq 1, else an upper bound because a
+  window was pruned). Hashes that agree again after differing are rejected as
+  a fabricated view. If all overlapping hashes agree: same head is
+  `consistent`, a shorter head present in the longer view is `prefix`, a key
+  history that is not a common prefix is `fork`, and windows that do not
+  overlap are `undetermined`.
+* A fork between two signed feed files that both verify against the same
+  pinned anchor is evidence that the publisher (or a key thief) equivocated.
+
+## Slack bridge (new in 0.3)
+
+`bridgeSlack()` / `hive-feed bridge-slack` turns Slack message JSON the
+operator already has (export day file or `conversations.history`-shaped
+`{ok, messages}`) into feed events. It makes no network calls and takes no
+Slack token; fetching from Slack is the operator's job.
+
+* Trust: only `message.user` (Slack user ID, `^[UW][A-Z0-9]{2,20}$`) on a
+  caller-supplied allowlist. Display names, usernames, `user_profile`,
+  `bot_profile` and the text are ignored for trust. No built-in IDs; an empty
+  allowlist trusts nobody (the CLI refuses it). Allowlist entries that are not
+  user IDs are an error.
+* Accepted messages: `type` absent or `message`, `subtype` absent or
+  `thread_broadcast` (so `bot_message`, edits, deletes, joins are skipped),
+  valid `ts` (`seconds.micro`), string `text` <= 4000 chars, optional
+  `channel` equal to the bridge channel (a Slack channel ID).
+* Type: fixed case-insensitive regexes, first match wins: `speed ping` ->
+  `speed_ping`; `DP-<n>`, `vote`, `proposal` -> `dao_vote`; `task`,
+  `MAZE-<n>`, `mission` -> `task`; anything else is skipped. Text is copied
+  verbatim into the event and stays untrusted data.
+* Event: `id = "slack-<channel>-<ts>"`, `poster_id` = Slack user ID,
+  `channel` = Slack channel ID, `url` = optional permalink from an https
+  `permalinkBase`, `ts` = Slack time, moved forward to the previous event's
+  `ts` if needed (feed `ts` is non-decreasing; the original Slack ts stays in
+  the id). Messages more than 5 minutes in the future are skipped.
+* Dedupe: key `channel:ts`, checked against ids in the feed window, an
+  optional bridge state file (`{format: "hive-feed/bridge-state-1", seen}`,
+  newest 50000 keys), and repeats within one input.
+* Signing: the operator's current publisher key (path supplied by the
+  caller; the CLI refuses a key inside a git work tree).
 
 ## Not in scope
 
-Confidentiality (feeds are public), Slack ingestion, consensus between
-multiple publishers, comparing heads or key histories between bots, threshold
-or multi-signer keys, and deciding what a task or vote *means*.
+Confidentiality (feeds are public), fetching from Slack, transporting view
+summaries between bots, consensus between multiple publishers, threshold or
+multi-signer keys, and deciding what a task or vote *means*.

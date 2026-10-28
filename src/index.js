@@ -16,3 +16,8 @@ export {
 export { DEFAULT_POLICY, emptyState, applyFeed } from './consumer.js';
 export { DEFAULT_PULL, pull } from './pull.js';
 export { safeDisplay } from './display.js';
+export {
+  BRIDGE_LIMITS, DEFAULT_RULES, ALLOWED_SUBTYPES, parseAllowlist, parseSlackInput, planBridge, bridgeSlack, classify,
+  slackTsToIso, dedupeKey, eventIdFor, emptyBridgeState, parseBridgeState
+} from './bridge.js';
+export { VIEW_FORMAT, makeView, serializeView, validateView, parseView, compareViews, comparePeers } from './compare.js';

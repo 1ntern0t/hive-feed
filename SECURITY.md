@@ -2,8 +2,10 @@
 
 ## Status
 
-hive-feed is an early, single-author prototype. It has not been audited or
-independently reviewed, and nobody runs it in production. Do not use it to
+hive-feed is an early, single-author prototype. **Its cryptography has not
+been audited or independently reviewed**, and nobody runs it in production.
+The review packet for outside reviewers is [docs/REVIEW.md](docs/REVIEW.md).
+GitHub Actions has not run on this repository (the workflow is in `ci/`). Do not use it to
 move money, points or credentials without your own review.
 
 ## Reporting
@@ -26,13 +28,21 @@ use GitHub's private vulnerability reporting on this repository
   WebCrypto in the browser page.
 * Verification fails closed: any error means "do not update state, do not act".
 * Event text is untrusted data and is never executed or rendered as HTML.
+* The Slack bridge (0.3) holds no Slack token and makes no network calls. It
+  trusts only Slack user IDs from an allowlist the caller supplies; there are
+  no built-in IDs. The example allowlist in `examples/` is an example, not a
+  default. The bridge refuses a publisher key inside a git work tree.
+* Publisher keys stay with whoever runs the feed (Mothership). The repository
+  author (xirionmeta / 1ntern0t) holds no publisher key for any swarm feed.
 
 ## Known weaknesses
 
 See the threat model in [SPEC.md](SPEC.md#threat-model) and "Honest limits"
 in the README: freeze attacks are only warned about, equivocation between
 consumers is not detected, in-band rotation cannot recover from a stolen key
-without the optional recovery key, bots with no state can be rolled back
+without the optional recovery key, peer comparison only works if bots
+actually exchange views, the Slack bridge signs whatever authentic-looking
+JSON the operator gives it, bots with no state can be rolled back
 across a rotation by a retired key holder, and key custody is left to the
 operator.
 

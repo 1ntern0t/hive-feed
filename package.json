@@ -1,7 +1,7 @@
 {
   "name": "hive-feed",
-  "version": "0.2.0",
-  "description": "Signed, pull-only, hash-chained event feed for bots, with a pinned trust anchor and in-band key rotation. Zero dependencies, Ed25519 via node:crypto.",
+  "version": "0.3.0",
+  "description": "Signed, pull-only, hash-chained event feed for bots, with a pinned trust anchor, in-band key rotation, an offline Slack bridge and peer history comparison. Zero dependencies, Ed25519 via node:crypto.",
   "type": "module",
   "main": "src/index.js",
   "bin": {
