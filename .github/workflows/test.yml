@@ -1,0 +1,46 @@
+# GitHub Actions only runs workflows under .github/workflows/. This file was
+# kept in ci/test.yml because the token that created the repository lacked
+# the workflow scope, so Actions never loaded it.
+# checkout@v4, setup-node@v4, and gitleaks-action@v2 declare Node 20, which
+# GitHub-hosted runners removed on 2026-09-23. These are the oldest majors
+# that declare Node 24. Permissions stay read-only.
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --test test/*.test.js
+      - name: refuse committed private keys
+        run: |
+          if git ls-files | grep -Ei '\.(key|pem|p8)$'; then echo "key file committed"; exit 1; fi
+          if git grep -nE 'BEGIN ([A-Z]+ )?PRIVATE KEY' -- . ':!SECURITY.md' ':!README.md' ':!test/cli.test.js'; then echo "private key material committed"; exit 1; fi
+  secrets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Comments need pull-requests: write. This job only reads.
+          GITLEAKS_ENABLE_COMMENTS: false
