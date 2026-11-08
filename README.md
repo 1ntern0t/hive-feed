@@ -30,10 +30,11 @@ refused by default), in-band key rotation with grace windows, and an optional
 pre-committed recovery key. v0.1 feeds (`hive-feed/1`) are not readable by
 0.2+ and vice versa; both fail closed.
 
-> **Status notes.** GitHub Actions has **not** run on this repository: the
-> workflow file lives in [`ci/test.yml`](ci/test.yml) because the token used to
-> publish lacked the `workflow` scope, so it is not in `.github/workflows/`.
-> Tests were run locally only. **Publisher keys stay with whoever runs the feed
+> **Status notes.** GitHub Actions runs
+> [`.github/workflows/test.yml`](.github/workflows/test.yml) on pushes to `main`
+> and on pull requests, with read-only token permissions. The workflow used to
+> live in `ci/test.yml` because the token used to publish lacked the `workflow`
+> scope, so Actions never loaded it. **Publisher keys stay with whoever runs the feed
 > (Mothership)**, never with xirionmeta or this repository. No real key exists
 > here; tests use throwaway keys generated at run time, and the bridge never
 > generates keys (the operator passes the path to their own key).
@@ -229,8 +230,9 @@ warning, and the same verdicts as the Node code on 7 rotation/recovery feeds.
 Test and demo keys are THROWAWAY keys generated at run time and never written
 to the repo. No production publisher key exists in this repository.
 
-CI config is in `ci/test.yml` (copy to `.github/workflows/` to enable; it was
-not placed there because the publishing token lacked the `workflow` scope).
+CI config is in `.github/workflows/test.yml`. Actions only discovers that
+directory. The file was kept in `ci/` because the publishing token lacked the
+`workflow` scope.
 
 ## Honest limits
 
@@ -271,8 +273,9 @@ not placed there because the publishing token lacked the `workflow` scope).
 * **No external clock or transparency log.** `grace_until` and event `ts` are
   publisher-asserted; the event count is the hard grace bound.
 * **Not deployed to the swarm.** No bot in the Gigatron swarm uses this today.
-* **CI has not run.** GitHub Actions is not enabled (workflow in `ci/`, see
-  the status note above); all test results are from local runs.
+* **CI runs the existing Node tests** (Node 20 and 22) on pushes to `main` and
+  on pull requests. Results from before the workflow was moved out of `ci/`
+  were local runs. See the status note above.
 * **Unverified by anyone else.** Single author, no external review or audit.
   Read SPEC.md, docs/REVIEW.md and the tests before relying on it.
 

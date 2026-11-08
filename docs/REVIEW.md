@@ -209,9 +209,9 @@ gitleaks detect --source .        # secrets scan, if gitleaks is installed
 ```
 
 All keys in tests are throwaway keys generated at run time. GitHub Actions
-has **not** run on this repository: the workflow is in `ci/test.yml` because
-the publishing token lacked the `workflow` scope; a maintainer has to copy it
-to `.github/workflows/` to enable it.
+runs `.github/workflows/test.yml` on pushes to `main` and on pull requests.
+The workflow was kept in `ci/test.yml` because the publishing token lacked
+the `workflow` scope; Actions does not load workflow files from `ci/`.
 
 ## 12. Where to look
 

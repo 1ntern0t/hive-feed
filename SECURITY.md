@@ -5,7 +5,8 @@
 hive-feed is an early, single-author prototype. **Its cryptography has not
 been audited or independently reviewed**, and nobody runs it in production.
 The review packet for outside reviewers is [docs/REVIEW.md](docs/REVIEW.md).
-GitHub Actions has not run on this repository (the workflow is in `ci/`). Do not use it to
+GitHub Actions runs `.github/workflows/test.yml` (it used to sit in `ci/`,
+which Actions does not load). Do not use it to
 move money, points or credentials without your own review.
 
 ## Reporting
